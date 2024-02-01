@@ -128,6 +128,25 @@ int main() {
                         }
 			printf("\n");
 		}
+
+		
+		// ECRIRE ICI
+
+		for (i=0; l->seq[i]!=0; i++) {
+			int pid = fork(); // Duplique le processus pour réaliser la commande
+			char **cmd = l->seq[i]; // Commande exécuté
+			if(pid == 0) { // Oui, on est dans le fils
+				execvp(cmd[0], cmd);
+			}
+
+			// Vérifie si la commande lancé doit l'être en arrière plan !
+			if (!l->bg){
+				// Attends  que le processus fils se termine
+				int status;
+				waitpid(pid, &status, 0);
+			}
+		}
+		
 	}
 
 }
