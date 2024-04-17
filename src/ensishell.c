@@ -131,11 +131,60 @@ int main() {
 
 		
 		// ECRIRE ICI
+		typedef struct bgProcess {
+			int pid; // PID du processus
+			char* command; // Commande exécutée
+			struct bgProcess *next; // Pointeur vers le prochain processus en arrière-plan
+		} bgProcess;
+
+		bgProcess *bgList = NULL;
+
+		void addBgProcess(int pid, char* command) {
+			bgProcess *newProcess = malloc(sizeof(bgProcess));
+			if (newProcess == 0){
+				
+				return;
+			}
+			printf("AAA %d \n",bgProcess);
+
+			newProcess->pid = pid;
+			newProcess->command = strdup(command); // duplique la commande
+			newProcess->next = bgList;
+			bgList = newProcess;
+		}
+		/*void checkBgProcesses() {
+			bgProcess **current = &bgList;
+			while (*current) {
+				int status;
+
+				
+				if (waitpid((*current)->pid, &status, WNOHANG) > 0) {
+					// Le processus a terminé
+					printf("Process %d finished: %s\n", (*current)->pid, (*current)->command);
+				}
+				current = &(*current)->next;
+			}
+		}*/
+		void jobs() {
+			bgProcess *current = bgList;
+			int estNull = (current == 0);
+			printf("EstNull ? %d \n",estNull);
+			while (current) {
+				printf("PID: %d, Command: %s\n", current->pid, current->command);
+				current = current->next;
+			}
+		}
 
 		for (i=0; l->seq[i]!=0; i++) {
 			int pid = fork(); // Duplique le processus pour réaliser la commande
 			char **cmd = l->seq[i]; // Commande exécuté
 			if(pid == 0) { // Oui, on est dans le fils
+				if ( strcmp(cmd[0],"jobs") == 0 ){ // Fonctions builtin
+						printf("JOBBBSSS \n");
+						jobs();
+						continue;
+				}
+				printf("bruh: ");
 				execvp(cmd[0], cmd);
 			}
 
@@ -144,6 +193,11 @@ int main() {
 				// Attends  que le processus fils se termine
 				int status;
 				waitpid(pid, &status, 0);
+			} else {
+				if (pid > 0){ // Si on est dans le parent et qu'on a bien créer le fils
+					printf("Ajoute %d %s \n",pid,cmd[0]);
+					 addBgProcess(pid, cmd[0]); 
+				}
 			}
 		}
 		
