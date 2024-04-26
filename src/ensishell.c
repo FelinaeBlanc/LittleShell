@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "variante.h"
 #include "readcmd.h"
@@ -32,8 +33,9 @@ int question6_executer(char *line)
 	 * parsecmd, then fork+execvp, for a single command.
 	 * pipe and i/o redirection are not required.
 	 */
-	printf("Not implemented yet: can not execute %s\n", line);
 
+	printf("Not implemented yet: can not execute %s\n", line);
+    
 	/* Remove this line when using parsecmd as it will free it */
 	free(line);
 	
@@ -58,6 +60,62 @@ void terminate(char *line) {
 	exit(0);
 }
 
+// Historique des processus en arrière plan
+typedef struct bgProcess {
+	int pid; // PID du processus
+	char* command; // Commande exécutée
+	struct bgProcess *next; // Pointeur vers le prochain processus en arrière-plan
+} bgProcess;
+
+bgProcess *bgList = NULL;
+
+void addBgProcess(int pid, char* command) {
+	bgProcess *newProcess = malloc(sizeof(bgProcess));
+	if (newProcess == 0){
+		
+		return;
+	}
+	newProcess->pid = pid;
+	newProcess->command = strdup(command); // duplique la commande
+	newProcess->next = bgList;
+	bgList = newProcess;
+}
+void removeBgProcess(int pid) {
+	bgProcess *current = bgList;
+	bgProcess *previous = NULL;
+	while (current) {
+		if (current->pid == pid) {
+			if (previous) {
+				previous->next = current->next;
+			} else {
+				bgList = current->next;
+			}
+			free(current->command);
+			free(current);
+			return;
+		}
+		previous = current;
+		current = current->next;
+	}
+}
+
+// Fonction pour afficher les processus en arrière plan et retirer ceux qui sont terminés
+void jobs() {
+	bgProcess *next = bgList;
+	int status;
+	while (next) {
+		bgProcess *current = next;
+		next = current->next;
+		
+        if (waitpid(current->pid, &status, WNOHANG) > 0) {
+
+			printf("Process with PID %d exited with status %d\n", current->pid, WEXITSTATUS(status));
+			removeBgProcess(current->pid);
+        } else {
+            printf("PID: %d, Command: %s\n", current->pid, current->command);
+        }
+	}
+}
 
 int main() {
         printf("Variante %d: %s\n", VARIANTE, VARIANTE_STRING);
@@ -103,7 +161,6 @@ int main() {
 
 		/* If input stream closed, normal termination */
 		if (!l) {
-		  
 			terminate(0);
 		}
 		
@@ -131,74 +188,55 @@ int main() {
 
 		
 		// ECRIRE ICI
-		typedef struct bgProcess {
-			int pid; // PID du processus
-			char* command; // Commande exécutée
-			struct bgProcess *next; // Pointeur vers le prochain processus en arrière-plan
-		} bgProcess;
-
-		bgProcess *bgList = NULL;
-
-		void addBgProcess(int pid, char* command) {
-			bgProcess *newProcess = malloc(sizeof(bgProcess));
-			if (newProcess == 0){
-				
-				return;
-			}
-			printf("AAA %d \n",bgProcess);
-
-			newProcess->pid = pid;
-			newProcess->command = strdup(command); // duplique la commande
-			newProcess->next = bgList;
-			bgList = newProcess;
-		}
-		/*void checkBgProcesses() {
-			bgProcess **current = &bgList;
-			while (*current) {
-				int status;
-
-				
-				if (waitpid((*current)->pid, &status, WNOHANG) > 0) {
-					// Le processus a terminé
-					printf("Process %d finished: %s\n", (*current)->pid, (*current)->command);
-				}
-				current = &(*current)->next;
-			}
-		}*/
-		void jobs() {
-			bgProcess *current = bgList;
-			int estNull = (current == 0);
-			printf("EstNull ? %d \n",estNull);
-			while (current) {
-				printf("PID: %d, Command: %s\n", current->pid, current->command);
-				current = current->next;
-			}
-		}
+		int pipefd[2];
+		pipe(pipefd);
 
 		for (i=0; l->seq[i]!=0; i++) {
-			int pid = fork(); // Duplique le processus pour réaliser la commande
+			
 			char **cmd = l->seq[i]; // Commande exécuté
-			if(pid == 0) { // Oui, on est dans le fils
-				if ( strcmp(cmd[0],"jobs") == 0 ){ // Fonctions builtin
-						printf("JOBBBSSS \n");
-						jobs();
-						continue;
-				}
-				printf("bruh: ");
-				execvp(cmd[0], cmd);
+
+			// Vérifie si la commande est un builtin
+			if ( strcmp(cmd[0],"jobs") == 0 ){ // Fonctions builtin 
+					jobs();
+					continue; // On passe à la commande suivante
 			}
 
+			// Sinon, on exécute la commande normalement 
+			int pid = fork(); // Duplique le processus pour réaliser la commande
+			if(pid == 0) { // Oui, on est dans le fils
+				if (l->seq[i+1]!=0) {
+					// Pour la première commande, redirige la sortie standard vers l'entrée du pipe
+					dup2(pipefd[1], STDOUT_FILENO);
+
+				} elseif (i!=0) {
+					// Pour la deuxième commande, redirige l'entrée standard depuis la sortie du pipe
+					dup2(pipefd[0], STDIN_FILENO);
+				}
+
+				close(pipefd[0]);
+				close(pipefd[1]);
+
+				// Ferme les descripteurs de fichiers inutiles
+				printf("a\n");
+				execvp(cmd[0], cmd);
+				printf("a\n");
+				exit(0);
+			}
+
+
+			// On est uniquement dans le père ensuite (à cause de execvp qui remplace le processus courant par la commande à exécuter)
 			// Vérifie si la commande lancé doit l'être en arrière plan !
 			if (!l->bg){
 				// Attends  que le processus fils se termine
 				int status;
 				waitpid(pid, &status, 0);
 			} else {
-				if (pid > 0){ // Si on est dans le parent et qu'on a bien créer le fils
-					printf("Ajoute %d %s \n",pid,cmd[0]);
-					 addBgProcess(pid, cmd[0]); 
-				}
+				addBgProcess(pid, cmd[0]); 
 			}
+
+			// Ferme les descripteurs de fichiers du pipe dans le parent
+			close(pipefd[0]);
+			close(pipefd[1]);
 		}
 		
 	}
