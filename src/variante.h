@@ -1,8 +1,8 @@
 #ifndef VARIANTE_H
 #define VARIANTE_H
 
-#define LOGINS Alex_Soubeyrand_soubeyal_Arthur_Lenne_lennea
-#define SUJET 0
+#define LOGINS Arthur_Lenne_lennea_Alex_Soubeyrand_soubeyal
+#define SUJET 3
 #define USE_GUILE 1
 #define USE_GNU_READLINE 1
 
