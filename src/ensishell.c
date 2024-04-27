@@ -102,6 +102,11 @@ void removeBgProcess(int pid) {
 // Fonction pour afficher les processus en arrière plan et retirer ceux qui sont terminés
 void jobs() {
 	bgProcess *next = bgList;
+	if (next == NULL) {
+		printf("No background process\n");
+		return;
+	}
+
 	int status;
 	while (next) {
 		bgProcess *current = next;
@@ -186,59 +191,71 @@ int main() {
 			printf("\n");
 		}
 
+		// Création d'un processus fils pour exécuter les commandes
+		int pid_child = fork(); 
 		
-		// ECRIRE ICI
-		int pipefd[2];
-		pipe(pipefd);
-
-		for (i=0; l->seq[i]!=0; i++) {
+		if (pid_child == 0) { // Processus fils qui exécute les commandes une par une 
 			
-			char **cmd = l->seq[i]; // Commande exécuté
+			int pipefd[2];
+			int prevPipefd[2];
 
-			// Vérifie si la commande est un builtin
-			if ( strcmp(cmd[0],"jobs") == 0 ){ // Fonctions builtin 
-					jobs();
-					continue; // On passe à la commande suivante
-			}
+			for (i=0; l->seq[i]!=0; i++) {
+		    	char **cmd = l->seq[i]; // Command to execute
+				int isNextPipe = l->seq[i+1]!=0; // Si la commande suivante est un pipe
 
-			// Sinon, on exécute la commande normalement 
-			int pid = fork(); // Duplique le processus pour réaliser la commande
-			if(pid == 0) { // Oui, on est dans le fils
-				if (l->seq[i+1]!=0) {
-					// Pour la première commande, redirige la sortie standard vers l'entrée du pipe
-					dup2(pipefd[1], STDOUT_FILENO);
-
-				} elseif (i!=0) {
-					// Pour la deuxième commande, redirige l'entrée standard depuis la sortie du pipe
-					dup2(pipefd[0], STDIN_FILENO);
+				if (isNextPipe) {
+					pipe(pipefd);
 				}
 
-				close(pipefd[0]);
-				close(pipefd[1]);
+				int pid_child_command = fork(); 
+				if(pid_child_command == 0) { // Processus fils
+					if (i != 0) { // Si ce n'est pas la première commande
+						dup2(prevPipefd[0], STDIN_FILENO);
+					}
+					if (isNextPipe) { // Si il existe une commande suivante (pipe) 
+						dup2(pipefd[1], STDOUT_FILENO);
+					}
 
-				// Ferme les descripteurs de fichiers inutiles
-				printf("a\n");
-				execvp(cmd[0], cmd);
-				printf("a\n");
-				exit(0);
+					close(prevPipefd[0]);
+					close(prevPipefd[1]);
+					close(pipefd[0]); 
+					if (!isNextPipe) {
+						close(pipefd[1]);
+					}
+
+					if ( strcmp(cmd[0],"jobs") == 0 ){ // Fonctions builtin 
+						jobs();
+						exit(0);
+					}
+					execvp(cmd[0], cmd);
+					exit(1);
+				} else { // Processus père
+					close(prevPipefd[0]);
+					close(prevPipefd[1]);
+
+					prevPipefd[0] = pipefd[0];
+					prevPipefd[1] = pipefd[1];
+
+					if (!isNextPipe) {
+						close(pipefd[0]);
+						close(pipefd[1]);
+					}
+
+					int status;
+					waitpid(pid_child_command, &status, 0); // Attente du processus fils
+				}
+
 			}
-
-
-			// On est uniquement dans le père ensuite (à cause de execvp qui remplace le processus courant par la commande à exécuter)
-			// Vérifie si la commande lancé doit l'être en arrière plan !
+			exit(0);
+		} else { // Processus père
 			if (!l->bg){
-				// Attends  que le processus fils se termine
 				int status;
-				waitpid(pid, &status, 0);
+				waitpid(pid_child, &status, 0);
 			} else {
-				addBgProcess(pid, cmd[0]); 
+				addBgProcess(pid_child, l->seq[0][0]);
 			}
 
-			// Ferme les descripteurs de fichiers du pipe dans le parent
-			close(pipefd[0]);
-			close(pipefd[1]);
 		}
-		
 	}
 
 }
