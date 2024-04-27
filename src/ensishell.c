@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <fcntl.h>
 
 #include "variante.h"
 #include "readcmd.h"
@@ -195,7 +196,6 @@ int main() {
 		int pid_child = fork(); 
 		
 		if (pid_child == 0) { // Processus fils qui exécute les commandes une par une 
-			
 			int pipefd[2];
 			int prevPipefd[2];
 
@@ -209,10 +209,28 @@ int main() {
 
 				int pid_child_command = fork(); 
 				if(pid_child_command == 0) { // Processus fils
-					if (i != 0) { // Si ce n'est pas la première commande
+					int in, out;
+					if (l->in) { // Entrée
+						if ((in = open(l->in, O_RDONLY)) < 0) {
+							perror("open");
+							exit(EXIT_FAILURE);
+						}
+						dup2(in, STDIN_FILENO);
+						close(in);
+					}
+					if (l->out) { // Sortie
+						if ((out = open(l->out, O_WRONLY | O_CREAT | O_TRUNC, 0644)) < 0) {
+							perror("open");
+							exit(EXIT_FAILURE);
+						}
+						dup2(out, STDOUT_FILENO);
+						close(out);
+					}
+
+					if (i != 0) { // If it's not the first command
 						dup2(prevPipefd[0], STDIN_FILENO);
 					}
-					if (isNextPipe) { // Si il existe une commande suivante (pipe) 
+					if (isNextPipe) { // If there is a next command (pipe) 
 						dup2(pipefd[1], STDOUT_FILENO);
 					}
 
@@ -241,6 +259,7 @@ int main() {
 						close(pipefd[1]);
 					}
 
+					printf("bruh \n");
 					int status;
 					waitpid(pid_child_command, &status, 0); // Attente du processus fils
 				}
